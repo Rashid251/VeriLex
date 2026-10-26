@@ -1,0 +1,16 @@
+langgraph
+langchain-core
+openai
+qdrant-client
+python-dotenv
+pdfplumber
+pydantic
+fastapi
+uvicorn[standard]
+sqlalchemy
+pwdlib[argon2]
+python-multipart
+itsdangerous
+pytest
+httpx
+pytest-asyncio
