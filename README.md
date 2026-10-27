@@ -156,53 +156,81 @@ The app also includes built-in retry/backoff around every chat model call (3 att
 
 ---
 
-## 8. Running this project
+## 8. Running locally
 
 ### Prerequisites
 
 - Python 3.11+
 - Node.js 18+
-- A Qdrant instance (Qdrant Cloud free tier works) and an EURI API key (`api.euron.one`)
+- A [Qdrant Cloud](https://cloud.qdrant.io) cluster (free tier works)
+- An [EURI](https://api.euron.one) API key (chat model)
+- A [Jina](https://jina.ai) API key (embeddings)
 
-### 1. Clone and set up the backend
+### Step 1 — Clone and create the Python environment
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Rashid251/VeriLex.git
 cd VeriLex
 
 python -m venv .venv
-source .venv/Scripts/activate      # Windows (Git Bash)
-# .venv\Scripts\activate           # Windows (cmd / PowerShell)
-# source .venv/bin/activate        # macOS / Linux
+
+# Windows (PowerShell)
+.\.venv\Scripts\Activate.ps1
+
+# macOS / Linux
+source .venv/bin/activate
 
 pip install -r requirements.txt
 ```
 
-### 2. Configure environment variables
+### Step 2 — Configure environment variables
 
 ```bash
+# Backend
 cp .env.example .env
+
+# Frontend
+cp frontend/.env.example frontend/.env
 ```
 
-Fill in `.env` with your real values (see `.env.example` for all keys). The minimum needed to run the web app locally:
+Open `.env` and fill in your real values. Minimum required to run the web app locally:
 
-```
-EURI_API_KEY=<your EURI API key>
-QDRANT_URL=<your Qdrant cluster URL>
-QDRANT_API_KEY=<your Qdrant API key>
-QDRANT_COLLECTION=selfcrag
+```env
+# Chat model (EURI)
+EURI_API_KEY=your-euri-api-key
+EURI_BASE_URL=https://api.euron.one/api/v1/euri
+CHAT_MODEL=gpt-5.6-sol
+
+# Embeddings (Jina)
+JINA_API_KEY=your-jina-api-key
+JINA_BASE_URL=https://api.jina.ai/v1
+JINA_EMBED_MODEL=jina-embeddings-v3
+
+# Vector database (Qdrant)
+QDRANT_URL=https://your-cluster.qdrant.io
+QDRANT_API_KEY=your-qdrant-api-key
+QDRANT_COLLECTION=verilex
+
+# SQLite auth database
 DATABASE_URL=sqlite:///./app.db
-SECRET_KEY=<generate with: python -c "import secrets; print(secrets.token_hex(32))">
+
+# Session security — generate with:
+#   python -c "import secrets; print(secrets.token_hex(32))"
+SECRET_KEY=replace-with-a-long-random-secret
+
+# CORS
 FRONTEND_URL=http://localhost:5173
+
+# Cookie settings (false = no HTTPS required locally)
+COOKIE_SECURE=false
 ```
 
-### 3. Create the local SQLite database
+`frontend/.env` only needs one line:
+```env
+VITE_API_URL=http://localhost:8000
+```
 
-The tables are created automatically when the backend starts. No manual migration step is needed. The database file will be created at `app.db` in the project root (or at the path set in `DATABASE_URL`).
-
-> `app.db` is in `.gitignore` — never commit it.
-
-### 4. Ingest the documents (one-time)
+### Step 3 — Ingest documents (one-time setup)
 
 Drop your PDFs into `data/`, then:
 
@@ -210,137 +238,275 @@ Drop your PDFs into `data/`, then:
 python -m rag.ingest
 ```
 
-This embeds and uploads every chunk into your Qdrant collection. Qdrant is **not** touched by the auth layer — it remains the vector database for document retrieval.
+This embeds every chunk with Jina and uploads it to your Qdrant collection. You only need to run this once (or again when documents change).
 
-### 5. Run it
+> **Note:** Qdrant is **not** touched by the auth layer — it is purely the vector store for RAG retrieval.
 
-**Option A — CLI:**
-
-```bash
-python main.py
-```
-
-Type a question when prompted.
-
-**Option B — Web app:**
-
-Terminal 1 (backend):
+### Step 4 — Run the backend
 
 ```bash
-python -m uvicorn api.server:app --port 8000 --reload
+uvicorn api.server:app --port 8000 --reload
 ```
 
-Terminal 2 (frontend):
+SQLite tables are created automatically on first startup. No migration step needed.
+
+### Step 5 — Run the frontend
+
+Open a second terminal:
 
 ```bash
 cd frontend
 npm install
-cp .env.example .env    # already set to http://localhost:8000
 npm run dev
 ```
 
-Open **http://localhost:5173** and sign up for a real account.
+Open **http://localhost:5173**, sign up for a new account, and start asking questions.
 
-> **Port note:** the backend runs on **8000**, Vite on **5173**. `VITE_API_URL` in `frontend/.env` must match the backend port. Both CORS (backend) and `FRONTEND_URL` must match the Vite port.
+> **Port note:** backend runs on **8000**, Vite on **5173**.  
+> `VITE_API_URL` in `frontend/.env` must point to the backend port.  
+> `FRONTEND_URL` in `.env` must point to the Vite port.
 
 ---
 
-## 9. Authentication
+## 9. Testing the endpoints locally
 
-The app uses **real backend authentication** via SQLite + Argon2 password hashing.
-
-- Passwords are hashed with Argon2 (never stored in plain text)
-- Sessions are stored in a **signed HttpOnly cookie** (`itsdangerous`) — not in `localStorage`
-- The cookie is `SameSite=Lax` locally (no HTTPS required) and `SameSite=None; Secure` in production
-
-### Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/auth/signup` | Create account; sets session cookie |
-| POST | `/auth/login` | Log in; sets session cookie |
-| POST | `/auth/logout` | Clear session cookie |
-| GET | `/auth/me` | Return current user or 401 |
-
-### Testing auth locally
+### Health check
 
 ```bash
-# Signup
+curl http://localhost:8000/health
+# Expected: {"status":"ok"}
+```
+
+### Authentication
+
+```bash
+# Sign up
 curl -c cookies.txt -X POST http://localhost:8000/auth/signup \
   -H "Content-Type: application/json" \
   -d '{"email":"you@example.com","password":"securepassword1"}'
 
-# Me
+# Check current user
 curl -b cookies.txt http://localhost:8000/auth/me
 
-# Logout
+# Log in (if you already have an account)
+curl -c cookies.txt -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"securepassword1"}'
+
+# Log out
 curl -c cookies.txt -b cookies.txt -X POST http://localhost:8000/auth/logout
 
-# Me after logout (expect 401)
+# /auth/me after logout — expect 401
 curl -b cookies.txt http://localhost:8000/auth/me
 ```
 
-### Running the auth test suite
+### RAG question (non-streaming)
+
+```bash
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What are the main PCI DSS requirements for card data storage?"}'
+```
+
+### RAG question (streaming — Server-Sent Events)
+
+```bash
+curl -N -X POST http://localhost:8000/ask/stream \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What is the FCA definition of a payment service?"}'
+```
+
+---
+
+## 10. Running the test suite
 
 ```bash
 pytest tests/test_auth.py -v
 ```
 
----
-
-## 10. Deploying to Render (backend)
-
-### Architecture note
-
-SQLite uses a **single file on disk** and does not support multiple concurrent write processes. On Render, use **one backend instance** (not multiple replicas). For a multi-instance setup, migrate to PostgreSQL.
-
-### Build command
-
-```
-pip install -r requirements.txt
-```
-
-### Start command
-
-```
-uvicorn api.server:app --host 0.0.0.0 --port $PORT
-```
-
-### Persistent disk (required for SQLite)
-
-1. In the Render dashboard, open your Web Service → **Disks**
-2. Add a disk: Mount Path `/var/data`, Size 1 GB (or more)
-3. Set the environment variable:
-   ```
-   DATABASE_URL=sqlite:////var/data/app.db
-   ```
-
-> The four slashes are correct: `sqlite:////var/data/app.db` = `sqlite://` + absolute path `/var/data/app.db`
-
-### Required environment variables on Render
-
-```
-EURI_API_KEY=...
-QDRANT_URL=...
-QDRANT_API_KEY=...
-QDRANT_COLLECTION=selfcrag
-DATABASE_URL=sqlite:////var/data/app.db
-SECRET_KEY=<strong random secret>
-FRONTEND_URL=https://your-frontend.vercel.app
-COOKIE_SECURE=true
-```
+Tests run against a dedicated `tests/test_auth.db` file (never the real `app.db`).  
+Expected output: **10 tests pass**, covering signup, duplicate email, short password, invalid email, login, wrong password, unknown email, `/auth/me` while logged in, `/auth/me` unauthenticated, and logout.
 
 ---
 
-## 11. Deploying the frontend to Vercel
+## 11. Authentication
 
-1. Push the `frontend/` directory (or the whole repo) to GitHub
-2. Import the project in Vercel; set **Root Directory** to `frontend`
-3. Add environment variable:
-   ```
-   VITE_API_URL=https://your-backend.onrender.com
-   ```
-4. Deploy
+The app uses **real backend authentication** — not a demo gate.
+
+| Layer | Technology |
+|-------|-----------|
+| Password hashing | Argon2 via `pwdlib` |
+| Session | Signed HttpOnly cookie (`itsdangerous`) |
+| Database | SQLite via SQLAlchemy |
+
+- Passwords are **never stored in plain text**
+- The session cookie is `HttpOnly` (not accessible from JavaScript)
+- `SameSite=Lax` locally, `SameSite=None; Secure` in production (controlled by `COOKIE_SECURE`)
+- `password_hash` is never returned in any API response
+
+### Auth endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/auth/signup` | Create account; returns user + sets session cookie |
+| `POST` | `/auth/login` | Log in; returns user + sets session cookie |
+| `POST` | `/auth/logout` | Clear the session cookie |
+| `GET` | `/auth/me` | Return current user, or HTTP 401 if not logged in |
 
 ---
+
+## 12. Deploying the backend to Render
+
+### Render service settings
+
+| Setting | Value |
+|---------|-------|
+| **Runtime** | Python |
+| **Build command** | `pip install -r requirements.txt` |
+| **Start command** | `uvicorn api.server:app --host 0.0.0.0 --port $PORT` |
+| **Health check path** | `/health` |
+| **Instance count** | **1** (SQLite does not support concurrent writers) |
+
+### Step 1 — Add a persistent disk
+
+SQLite lives on disk. Without a persistent disk, your database is wiped on every deploy.
+
+1. In the Render dashboard → your Web Service → **Disks**
+2. Click **Add Disk**
+3. Set **Mount Path** to `/var/data`
+4. Set **Size** to 1 GB (or more)
+
+### Step 2 — Set environment variables on Render
+
+Go to your Web Service → **Environment** and add:
+
+```
+EURI_API_KEY          = <your EURI key>
+EURI_BASE_URL         = https://api.euron.one/api/v1/euri
+CHAT_MODEL            = gpt-5.6-sol
+
+JINA_API_KEY          = <your Jina key>
+JINA_BASE_URL         = https://api.jina.ai/v1
+JINA_EMBED_MODEL      = jina-embeddings-v3
+
+QDRANT_URL            = <your Qdrant cluster URL>
+QDRANT_API_KEY        = <your Qdrant API key>
+QDRANT_COLLECTION     = verilex
+
+DATABASE_URL          = sqlite:////var/data/app.db
+SECRET_KEY            = <long random secret — generate locally first>
+FRONTEND_URL          = https://your-verilex.vercel.app
+COOKIE_SECURE         = true
+```
+
+> **`DATABASE_URL` uses four slashes**: `sqlite:////var/data/app.db`  
+> = `sqlite://` (scheme) + `/var/data/app.db` (absolute path on the mounted disk)
+
+### Step 3 — Deploy
+
+Push to `main` branch — Render auto-deploys on every push.
+
+After deploy, test the health endpoint:
+```bash
+curl https://your-backend.onrender.com/health
+# Expected: {"status":"ok"}
+```
+
+---
+
+## 13. Deploying the frontend to Vercel
+
+### Step 1 — Import the repo
+
+1. Go to [vercel.com](https://vercel.com) → **Add New Project**
+2. Import `https://github.com/Rashid251/VeriLex`
+3. Set **Root Directory** to `frontend`
+4. Framework preset will be detected as **Vite** automatically
+
+### Step 2 — Set environment variable
+
+In Vercel → Project Settings → **Environment Variables**, add:
+
+```
+VITE_API_URL = https://your-backend.onrender.com
+```
+
+Replace `your-backend.onrender.com` with the actual URL Render assigns to your service.
+
+### Step 3 — Deploy
+
+Click **Deploy**. Vercel runs `npm run build` and serves the `dist/` output.
+
+### Step 4 — Update CORS on Render
+
+After Vercel assigns your frontend URL (e.g. `https://verilex.vercel.app`), go back to Render and update:
+
+```
+FRONTEND_URL = https://verilex.vercel.app
+```
+
+Then redeploy the Render service so the new CORS origin takes effect.
+
+---
+
+## 14. Environment variable reference
+
+### Backend (`.env` / Render Environment)
+
+| Variable | Required | Description | Example |
+|----------|----------|-------------|---------|
+| `EURI_API_KEY` | ✅ | EURI gateway API key | `sk-...` |
+| `EURI_BASE_URL` | ✅ | EURI API base URL | `https://api.euron.one/api/v1/euri` |
+| `CHAT_MODEL` | ✅ | Chat model name | `gpt-5.6-sol` |
+| `JINA_API_KEY` | ✅ | Jina embeddings API key | `jina_...` |
+| `JINA_BASE_URL` | ✅ | Jina API base URL | `https://api.jina.ai/v1` |
+| `JINA_EMBED_MODEL` | ✅ | Jina embedding model name | `jina-embeddings-v3` |
+| `QDRANT_URL` | ✅ | Qdrant cluster URL | `https://xxx.qdrant.io` |
+| `QDRANT_API_KEY` | ✅ | Qdrant API key | `qdrant_...` |
+| `QDRANT_COLLECTION` | ✅ | Qdrant collection name | `verilex` |
+| `DATABASE_URL` | ✅ | SQLite connection URL | `sqlite:///./app.db` (local), `sqlite:////var/data/app.db` (Render) |
+| `SECRET_KEY` | ✅ | Signing key for session cookies | 64-char hex string |
+| `FRONTEND_URL` | ✅ | Allowed CORS origin (comma-separated for multiple) | `https://verilex.vercel.app` |
+| `COOKIE_SECURE` | ✅ | `false` locally, `true` on Render | `true` |
+
+### Frontend (`frontend/.env` / Vercel Environment Variables)
+
+| Variable | Required | Description | Example |
+|----------|----------|-------------|---------|
+| `VITE_API_URL` | ✅ | Backend API base URL (no trailing slash) | `http://localhost:8000` (local), `https://your-backend.onrender.com` (Vercel) |
+
+---
+
+## 15. CORS configuration
+
+The backend reads `FRONTEND_URL` and adds local development origins automatically:
+
+- `http://localhost:5173` and `http://127.0.0.1:5173` are always allowed (no config needed for local dev)
+- Production origins come from `FRONTEND_URL` (comma-separated for multiple URLs)
+
+**Never use wildcard CORS (`*`) with `credentials: true`** — browsers will reject the response. The backend always uses explicit origin lists.
+
+---
+
+## 16. Security notes
+
+- Passwords are hashed with **Argon2** — never stored or logged in plain text
+- `password_hash` is never returned in any API response
+- Sessions use **signed HttpOnly cookies** — not `localStorage` or `sessionStorage`
+- Real API keys must only be set in `.env` (local) or the deployment platform dashboard — never committed to git
+- `.env`, `app.db`, and `frontend/dist/` are all in `.gitignore`
+- `SECRET_KEY` must be a strong random value — generate with:
+  ```bash
+  python -c "import secrets; print(secrets.token_hex(32))"
+  ```
+
+---
+
+## 17. Database notes
+
+- **SQLite** is used for user accounts and sessions only
+- **Qdrant** remains the vector database for all document embeddings and RAG retrieval
+- Tables are created with `CREATE TABLE IF NOT EXISTS` on startup — safe to restart, no data loss
+- On Render, the disk at `/var/data` must be mounted **before first deploy** or the database path won't exist
+- SQLite supports only **one writer at a time** — keep Render at **1 instance**
 

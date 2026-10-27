@@ -1,0 +1,64 @@
+# render.yaml — Render Infrastructure-as-Code for VeriLex backend
+#
+# This file documents the Render service configuration.
+# IMPORTANT: Do NOT put real secrets here.
+#            Set all environment variables in the Render dashboard → Environment tab.
+#
+# Persistent disk REQUIRED for SQLite:
+#   1. In the Render dashboard, open your Web Service.
+#   2. Go to Disks → Add Disk.
+#   3. Set Mount Path: /var/data
+#   4. Set DATABASE_URL env var to: sqlite:////var/data/app.db
+
+services:
+  - type: web
+    name: verilex-backend
+    runtime: python
+    region: oregon           # change to match your preferred Render region
+    plan: free               # upgrade to a paid plan for production SLAs
+
+    # Build step — installs all Python dependencies
+    buildCommand: pip install -r requirements.txt
+
+    # Start command — Render injects $PORT automatically
+    startCommand: uvicorn api.server:app --host 0.0.0.0 --port $PORT
+
+    # Health check — Render uses this to confirm the service is up
+    healthCheckPath: /health
+
+    # Environment variables — values must be set in the Render dashboard.
+    # List keys only; never put real values in this file.
+    envVars:
+      - key: EURI_API_KEY
+        sync: false
+      - key: EURI_BASE_URL
+        sync: false
+      - key: CHAT_MODEL
+        sync: false
+      - key: JINA_API_KEY
+        sync: false
+      - key: JINA_BASE_URL
+        value: https://api.jina.ai/v1
+      - key: JINA_EMBED_MODEL
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: QDRANT_COLLECTION
+        value: verilex
+      - key: DATABASE_URL
+        value: sqlite:////var/data/app.db
+      - key: SECRET_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false          # set to your Vercel URL, e.g. https://verilex.vercel.app
+      - key: COOKIE_SECURE
+        value: "true"
+
+    # Persistent disk — required to keep app.db across Render deploys/restarts.
+    # Without this disk, the SQLite database is lost on every deploy.
+    disk:
+      name: verilex-data
+      mountPath: /var/data
+      sizeGB: 1

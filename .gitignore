@@ -1,34 +1,29 @@
-# secrets
+# secrets and local config — never committed
 .env
+frontend/.env
 
-# notebook (not needed in the repo)
+# notebook
 notes.ipynb
 .ipynb_checkpoints/
 
-# python
+# Python
 __pycache__/
 *.pyc
+*.pyo
 .venv/
 
-# frontend (frontend/ has its own .gitignore too, this covers root-level git add)
+# SQLite databases — never committed (data is on Render's persistent disk)
+*.db
+app.db
+tests/*.db
+
+# Frontend build artifacts
 frontend/node_modules/
 frontend/dist/
 
-# claude code local session state
-.claude/
-
-# OS / editor
+# Editor / OS
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-
-# SQLite auth database
-*.db
-app.db
-test_auth.db
-tests/*.db
-/var/data/app.db
-
-# frontend env with real values
-frontend/.env
+.claude/
